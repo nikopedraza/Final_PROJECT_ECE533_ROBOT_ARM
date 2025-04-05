@@ -7,16 +7,16 @@
 #define bitflip(word,  idx)  ((word) ^=  (1<<(idx))) //Flips the bit number <idx> -- All other bits are not affected.
 #define bitcheck(word, idx)  ((word>>idx) &   1    ) //Checks the bit number <idx> -- 0 means clear; !0 means set.
 
-const uint8_t step_sequence[8][4] = [
-	[1, 0, 0, 0],
-	[1, 1, 0, 0],
-	[0, 1, 0, 0],
-	[0, 1, 1, 0],
-	[0, 0, 1, 0],
-	[0, 0, 1, 1],
-	[0, 0, 0, 1],
-	[1, 0, 0, 1]
-];
+const uint8_t step_sequence[8][4] = {
+	{1, 0, 0, 0},
+	{1, 1, 0, 0},
+	{0, 1, 0, 0},
+	{0, 1, 1, 0},
+	{0, 0, 1, 0},
+	{0, 0, 1, 1},
+	{0, 0, 0, 1},
+	{1, 0, 0, 1}
+};
 
 uint8_t base_sequence_position = 0;
 uint8_t lower_sequence_position = 0;
