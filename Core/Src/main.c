@@ -1,5 +1,6 @@
 #include "stm32l552xx.h"
 #include "stdio.h"
+#include "i2c.h"
 
 // Some helper macros
 #define bitset(word,   idx)  ((word) |=  (1<<(idx))) //Sets the bit number <idx> -- All other bits are not affected.
