@@ -101,11 +101,11 @@ void tim2_iniit() {
 	TIM2->PSC = 16;
 }
 
-void i2c_init() {
+void queery_joystick_xy(uint8_t addr, uint8_t *joy_xy) {
+	joy_xy[0] = readI2C(addr, 0x10);
+	joy_xy[1] = readI2C(addr, 0x11);
 
 }
-
-
 const uint8_t *get_current_step(StepIterator *it)
 {
     return step_sequence[it->current_index];
