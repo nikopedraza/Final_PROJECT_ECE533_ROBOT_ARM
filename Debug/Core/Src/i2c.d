@@ -1,4 +1,4 @@
-Core/Src/main.o: ../Core/Src/main.c \
+Core/Src/i2c.o: ../Core/Src/i2c.c \
  ../Drivers/CMSIS/Device/ST/STM32L5xx/Include/stm32l552xx.h \
  ../Drivers/CMSIS/Include/core_cm33.h \
  ../Drivers/CMSIS/Include/cmsis_version.h \

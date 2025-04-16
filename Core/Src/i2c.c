@@ -7,12 +7,8 @@
 
 #include "stm32l552xx.h"
 #include "stdio.h"
+#include "i2c.h"
 
-// Some helper macros
-#define bitset(word,   idx)  ((word) |=  (1<<(idx))) //Sets the bit number <idx> -- All other bits are not affected.
-#define bitclear(word, idx)  ((word) &= ~(1<<(idx))) //Clears the bit number <idx> -- All other bits are not affected.
-#define bitflip(word,  idx)  ((word) ^=  (1<<(idx))) //Flips the bit number <idx> -- All other bits are not affected.
-#define bitcheck(word, idx)  ((word>>idx) &   1    ) //Checks the bit number <idx> -- 0 means clear; !0 means set.
 
 void initI2C() {
 	// Enable I2C clk
@@ -20,7 +16,7 @@ void initI2C() {
 
 	// Enable GPIO clk
 	RCC->AHB2ENR |= (0b1 << 1); // enable gpiob
-	RCC->AHB2ENR |= (0b1 << 2); // enable gpioc
+//	RCC->AHB2ENR |= (0b1 << 2); // enable gpioc
 
 	// AF mode for PB8
 	bitclear(GPIOB->MODER, 16);
@@ -37,10 +33,13 @@ void initI2C() {
 	bitset(GPIOB->AFR[1], 6);
 
 	// set output mode for pc6
-	bitset(GPIOC->MODER, 12);
+//	bitset(GPIOC->MODER, 12);
 
 	// open drain pb8 and pb9
 	GPIOB->OTYPER |= 0b11 << 8;
+
+//	//enable internl pullups for pb8 and 9
+	GPIOB->PUPDR |= (0b0101 << 2*8);
 
 	// very high speed pb8 and pb9
 	GPIOB->OSPEEDR |= 0b1111 << 16;
@@ -115,4 +114,130 @@ uint8_t readI2C(uint8_t addr, uint8_t reg) {
 
 	return data;
 }
+
+void MCP23008_Init(void)
+{
+    /* IODIR = 0x00 => lower nibble inputs, upper nibble outputs */
+	MCP23008_WriteRegBlocking(MCP23008_I2C_ADDRESS_1,MCP23008_IODIR, MCP23008_IODIR_INIT);
+
+	MCP23008_WriteRegBlocking(MCP23008_I2C_ADDRESS_2,MCP23008_IODIR, MCP23008_IODIR_INIT);
+
+
+
+}
+
+void MCP23008_WriteRegBlocking(uint8_t slaveaddr, uint8_t regAddr, uint8_t value)
+{
+    // Wait until I2C bus is free
+    while(I2C1->ISR & I2C_ISR_BUSY);
+
+    // Configure the transfer:
+    // - Device 7-bit address is shifted left by 1
+    // - Write mode (RD_WRN = 0)
+    // - 2 bytes to be transmitted (NBYTES = 2)
+    // - Generate start condition (START bit)
+    I2C1->CR2 = 0;
+    I2C1->CR2 |= (slaveaddr << 1);
+	I2C1->CR2 |= (0 << I2C_CR2_RD_WRN_Pos);
+	I2C1->CR2 |= (2 << I2C_CR2_NBYTES_Pos);
+	I2C1->CR2 |= (1 << I2C_CR2_AUTOEND_Pos);
+
+    I2C1->CR2 |= I2C_CR2_START;
+
+    // Wait for TXIS flag to indicate data can be written
+    while(!(I2C1->ISR & I2C_ISR_TXE));
+
+    // Write the register address into TXDR
+    I2C1->TXDR = regAddr;
+
+    while(!(I2C1->ISR & I2C_ISR_TXE));
+
+    // Write the data byte into TXDR
+    I2C1->TXDR = value;
+
+    while (bitcheck(I2C1->ISR, 0) != 1);
+    // Wait until the STOPF (stop flag) is set
+    while(!(I2C1->ISR & I2C_ISR_STOPF));
+
+    // Clear the stop flag by writing to ICR
+//    I2C1->ICR = I2C_ICR_STOPCF;
+}
+
+
+/**
+ * @brief  Read a single byte from a register of the MCP23008 using blocking (poll) mode.
+ * @param  regAddr: The MCP23008 register address to read from.
+ * @return The data byte read from the register.
+ *
+ * This function performs a two-stage transaction:
+ *  1. A write stage that sends the register address.
+ *  2. A repeated start in read mode that reads one byte from the specified register.
+ */
+uint8_t MCP23008_ReadRegBlocking(uint8_t slaveaddr,uint8_t regAddr)
+{
+    uint8_t data = 0;
+
+    // Wait until I2C bus is free
+    while(I2C1->ISR & I2C_ISR_BUSY);
+
+
+
+    /***** Stage 1: Write the register address *****/
+    // Configure the transfer:
+    // - 7-bit address, write mode (RD_WRN = 0)
+    // - 1 byte to send (the register address)
+    // - Generate start condition
+    I2C1->CR2 = 0;
+    I2C1->CR2 |= (slaveaddr << 1);
+	I2C1->CR2 |= (0 << I2C_CR2_RD_WRN_Pos);
+    I2C1->CR2 |= (1 << I2C_CR2_NBYTES_Pos);
+    I2C1->CR2 |= (1 << I2C_CR2_AUTOEND_Pos);
+
+	I2C1->CR2 |= I2C_CR2_START;
+    // Wait for TXIS flag (ready to transmit)
+    while(!(I2C1->ISR & I2C_ISR_TXE));
+
+    // Send the register address byte
+    I2C1->TXDR = regAddr;
+
+    while (bitcheck(I2C1->ISR, 0) != 1);                 // Wait for the transmit buffer to be empty.
+    while (bitcheck(I2C1->ISR, 2) == 1){
+		   (void)I2C1->RXDR;
+    }
+
+
+    /***** Stage 2: Read from the register *****/
+    // Now configure a new transfer with a repeated start:
+    // - 7-bit address, read mode (RD_WRN = 1)
+    // - 1 byte to read
+    // - Generate start condition (repeated start)
+    I2C1->CR2 = 0;
+    I2C1->CR2 |= (slaveaddr << 1);
+    I2C1->CR2 |= (1 << I2C_CR2_RD_WRN_Pos);
+	I2C1->CR2 |= (1 << I2C_CR2_NBYTES_Pos);
+	I2C1->CR2 |= (1 << I2C_CR2_AUTOEND_Pos);
+
+    I2C1->CR2 |= I2C_CR2_START;
+
+    // Wait until RXNE flag is set (data received)
+    while(!(I2C1->ISR & I2C_ISR_RXNE));
+
+    // Read the received byte from RXDR
+    data = I2C1->RXDR;
+
+
+    // Wait for the STOPF flag indicating the end of the transfer
+    while(!(I2C1->ISR & I2C_ISR_STOPF));
+
+    // Clear the stop flag
+   // I2C1->ICR = I2C_ICR_STOPCF;
+
+    return data;
+}
+
+
+
+
+
+
 
