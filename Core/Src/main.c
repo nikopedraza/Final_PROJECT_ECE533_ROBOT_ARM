@@ -10,6 +10,8 @@
 // center and dead‐zone width
 #define CENTER   127
 #define DEAD     15
+#define GRABBER_MAX 400
+#define GRABBER_MIN 200
 
 // precompute the two thresholds
 enum {
@@ -24,6 +26,7 @@ void init_TIM3();
 void init_TIM4();
 void next_step();
 void updateMotorFromIterator();
+void initPWM_TIM5();
 
 
 const uint8_t step_sequence[8] = {
@@ -85,6 +88,8 @@ Motor upper = {
 	.data = 0x00
 };
 
+int8_t next_grabber_state = 0;
+uint16_t grabber_position = 300;
 
 int main(void) {
 
@@ -94,27 +99,13 @@ int main(void) {
 	 initI2C();
 	 MCP23008_Init();
 	 init_TIM2();
+	 initPWM_TIM5();
 //	 init_TIM3();
 
-// DEMO CODE FOR TESTING THE DC MOTOR SETUP
 
 
 	while(1){
 
-		// any thing polling ?
-//		processExpanderChange();
-//
-//
-//		next_step(&upper_iter);
-//		updateMotorFromIterator(&upper,&upper_iter);
-//
-//		next_step(&lower_iter);
-//		updateMotorFromIterator(&lower,&lower_iter);
-//
-//		next_step(&base_iter);
-//		updateMotorFromIterator(&base,&base_iter);
-
-//		delayms(125);
 
 	}
 }
@@ -348,24 +339,50 @@ void TIM2_IRQHandler() {
     // X2
     if (adc_x2 > HIGH_Z) {
         // above dead‐zone
-    	next_step(&upper_iter);
+//    	next_grabber_state = 1;
+    	if (grabber_position< GRABBER_MAX){
+        grabber_position++;  // 25% duty (50 / 200)
+    	}
+        TIM5->CCR1 = grabber_position;
+
 
     }
     else if (adc_x2 < LOW_Z) {
         // below dead‐zone
-    	prev_step(&upper_iter);
+//    	next_grabber_state = -1;
+    	if( grabber_position > GRABBER_MIN){
+        grabber_position--;  // 25% duty (50 / 200)
+    	}
+        TIM5->CCR1 = grabber_position;
+
 
     }
-    else {
-        // inside dead‐zone
-    }
+//    else {
+//        // inside dead‐zone
+////    	next_grabber_state = 0;
+//    }
+
+//    // Modify CCR1 here — e.g., toggle between 25% and 75%
+//    if ((next_grabber_state == -1) && (grabber_position > GRABBER_MIN)) {
+//        grabber_position--;  // 25% duty (50 / 200)
+//    } else if ((next_grabber_state == 1) && (grabber_position < GRABBER_MAX)){
+//        grabber_position++;  // 25% duty (50 / 200)
+//    }
+//    else {
+//    	// do nothing
+//    }
+//    TIM5->CCR1 = grabber_position;
 
     // Y2
     if (adc_y2 > HIGH_Z) {
         // above dead‐zone
+    	next_step(&upper_iter);
+
     }
     else if (adc_y2 < LOW_Z) {
         // below dead‐zone
+    	prev_step(&upper_iter);
+
     }
     else {
         // inside dead‐zone
@@ -411,12 +428,65 @@ void TIM4_IRQHandler() {
 	updateMotorFromIterator(&upper, &upper_iter);
 }
 
-void TIM5_IRQHandler () { // servo pwm control
-	// -90
+void initPWM_TIM5() {
+    // Enable GPIOA and TIM5 clocks
+    RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
+    RCC->APB1ENR1 |= RCC_APB1ENR1_TIM5EN;
 
-	// 0
+    GPIOA->OTYPER &= ~GPIO_OTYPER_OT0;  // Push-pull
+    GPIOA->PUPDR  &= ~GPIO_PUPDR_PUPD0; // No pull-up/down
 
-	//90
+    //  Set PA0 to alternate function mode (AF2 for TIM5_CH1)
+    GPIOA->MODER &= ~GPIO_MODER_MODE0;          // Clear mode bits
+    GPIOA->MODER |= GPIO_MODER_MODE0_1;         // Set to AF mode
+    GPIOA->AFR[0] &= ~GPIO_AFRL_AFSEL0;         // Clear AF bits
+    GPIOA->AFR[0] |= 2; // AF2 for TIM5_CH1
+
+    //  Set prescaler and auto-reload for 1 kHz PWM
+    TIM5->PSC = 15;          // 16 MHz / (1599+1) = 1 MHz
+    TIM5->ARR = 20000 - 1;      // 1 MHz / 20000 = 50Hz frequency
+
+    //  Set compare value (duty cycle)
+    TIM5->CCR1 = 300;          // 50% duty cycle
+
+    //  Configure PWM mode 1 on CH1 and enable preload
+    TIM5->CCMR1 &= ~TIM_CCMR1_OC1M;
+    TIM5->CCMR1 |= (6 << TIM_CCMR1_OC1M_Pos);  // PWM mode 1
+    TIM5->CCMR1 |= TIM_CCMR1_OC1PE;            // Preload enable
+
+    //  Enable output on CH1
+    TIM5->CCER |= TIM_CCER_CC1E;
+
+    //  Enable auto-reload preload
+    TIM5->CR1 |= TIM_CR1_ARPE;
+
+    //  Enable counter
+    TIM5->CR1 |= TIM_CR1_CEN;
+
+    // Enable update interrupt
+    TIM5->DIER |= TIM_DIER_UIE;
+
+    // Enable TIM5 IRQ in NVIC
+//    NVIC_EnableIRQ(TIM5_IRQn);
+
+}
+void TIM5_IRQHandler(void) {
+    if (TIM5->SR & TIM_SR_UIF) {           // Check update interrupt flag
+        TIM5->SR &= ~TIM_SR_UIF;           // Clear it
+
+        GPIOA->ODR = 1;
+
+        // Modify CCR1 here — e.g., toggle between 25% and 75%
+        if ((next_grabber_state == -1) & (grabber_position > GRABBER_MIN)) {
+            grabber_position--;  // 25% duty (50 / 200)
+        } else if ((next_grabber_state == 1) & (grabber_position < GRABBER_MAX)){
+            grabber_position++;  // 25% duty (50 / 200)
+        }
+        else {
+        	// do nothing
+        }
+        TIM5->CCR1 = grabber_position;
+    }
 }
 
 void processExpanderChange(void)
