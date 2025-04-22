@@ -21,6 +21,10 @@
 #define MCP23008_INTCON   (0x04)    // Interrupt control register
 #define MCP23008_IODIR_INIT   (0x00) // sets all the expanders as outputs
 #define MCP23008_GPIO         (0x09)   /* GPIO Register for read/write     */
+#define JOYSTICK_L_SADDR		(0x63)
+#define JOYSTICK_R_SADDR		(0x64)
+#define JOYSTICK_8BIT_REG   (0x10)
+
 #define delayms(ms) for(int i =0;i<ms*16000;i++)
 // Some helper macros
 #define bitset(word,   idx)  ((word) |=  (1<<(idx))) //Sets the bit number <idx> -- All other bits are not affected.
@@ -33,7 +37,7 @@ void writeI2C(uint8_t addr, uint8_t *data, uint8_t length);
 uint8_t readI2C(uint8_t addr, uint8_t reg);
 void MCP23008_Init();
 void MCP23008_WriteRegBlocking(uint8_t slaveaddr,uint8_t regAddr, uint8_t value);
-uint8_t MCP23008_ReadRegBlocking(uint8_t slaveaddr,uint8_t regAddr);
+void MCP23008_ReadRegBlocking(uint8_t slaveaddr,uint8_t regAddr,uint8_t length,uint8_t *buffer);
 void processExpanderChange();
 
 #endif

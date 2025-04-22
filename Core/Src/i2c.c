@@ -39,7 +39,7 @@ void initI2C() {
 	GPIOB->OTYPER |= 0b11 << 8;
 
 //	//enable internl pullups for pb8 and 9
-	GPIOB->PUPDR |= (0b0101 << 2*8);
+//	GPIOB->PUPDR |= (0b0101 << 2*8);
 
 	// very high speed pb8 and pb9
 	GPIOB->OSPEEDR |= 0b1111 << 16;
@@ -49,11 +49,11 @@ void initI2C() {
 	I2C1->CR1 |= 0b0;
 
 	// Program I2C timing based on target speed (100kHz)
-	I2C1->TIMINGR |= 3 << 28; //PRESC
-	I2C1->TIMINGR |= 0x13; // SCLL
-	I2C1->TIMINGR |= 0xF << 8; // SCLH
+	I2C1->TIMINGR |= 1 << 28; //PRESC
+	I2C1->TIMINGR |= 0x9; // SCLL
+	I2C1->TIMINGR |= 0x3 << 8; // SCLH
 	I2C1->TIMINGR |= 0x2 << 16; // SDADEL
-	I2C1->TIMINGR |= 0x4 << 20; // SCLDEL
+	I2C1->TIMINGR |= 0x3 << 20; // SCLDEL
 
 	// enable I2C
 	I2C1->CR1 |= 0b1;
@@ -173,9 +173,8 @@ void MCP23008_WriteRegBlocking(uint8_t slaveaddr, uint8_t regAddr, uint8_t value
  *  1. A write stage that sends the register address.
  *  2. A repeated start in read mode that reads one byte from the specified register.
  */
-uint8_t MCP23008_ReadRegBlocking(uint8_t slaveaddr,uint8_t regAddr)
+void MCP23008_ReadRegBlocking(uint8_t slaveaddr,uint8_t regAddr,uint8_t length,uint8_t *buffer)
 {
-    uint8_t data = 0;
 
     // Wait until I2C bus is free
     while(I2C1->ISR & I2C_ISR_BUSY);
@@ -209,21 +208,24 @@ uint8_t MCP23008_ReadRegBlocking(uint8_t slaveaddr,uint8_t regAddr)
     /***** Stage 2: Read from the register *****/
     // Now configure a new transfer with a repeated start:
     // - 7-bit address, read mode (RD_WRN = 1)
-    // - 1 byte to read
+    // - length byte to read
     // - Generate start condition (repeated start)
     I2C1->CR2 = 0;
     I2C1->CR2 |= (slaveaddr << 1);
     I2C1->CR2 |= (1 << I2C_CR2_RD_WRN_Pos);
-	I2C1->CR2 |= (1 << I2C_CR2_NBYTES_Pos);
+	I2C1->CR2 |= (length << I2C_CR2_NBYTES_Pos);
 	I2C1->CR2 |= (1 << I2C_CR2_AUTOEND_Pos);
 
     I2C1->CR2 |= I2C_CR2_START;
 
-    // Wait until RXNE flag is set (data received)
-    while(!(I2C1->ISR & I2C_ISR_RXNE));
 
-    // Read the received byte from RXDR
-    data = I2C1->RXDR;
+
+    for(int i=0;i<length;i++){
+    	// Wait until RXNE flag is set (data received)
+    	while(!(I2C1->ISR & I2C_ISR_RXNE));
+    	// Read the received byte from RXDR
+    	buffer[i] = I2C1->RXDR;
+    }
 
 
     // Wait for the STOPF flag indicating the end of the transfer
@@ -232,7 +234,6 @@ uint8_t MCP23008_ReadRegBlocking(uint8_t slaveaddr,uint8_t regAddr)
     // Clear the stop flag
    // I2C1->ICR = I2C_ICR_STOPCF;
 
-    return data;
 }
 
 
